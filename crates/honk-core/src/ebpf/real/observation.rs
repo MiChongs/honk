@@ -72,6 +72,7 @@ impl RealEbpfBackend {
         if owned.is_empty()
             && self.cgroup_sock_links.is_empty()
             && self.cgroup_sock_addr_links.is_empty()
+            && self.cgroup_takeovers.is_empty()
             && self.dae0_ingress_link.is_none()
             && self.dae0peer_ingress_link.is_none()
             && self.sk_lookup_link.is_none()
@@ -109,8 +110,11 @@ impl RealEbpfBackend {
         // Every hook the real datapath owns is required: the configured TCX
         // hooks, the cgroup hooks when cgroup v2 is present, and dae0_ingress,
         // dae0peer_ingress and tproxy_sk_lookup, which startup always attaches.
-        let required =
-            owned.len() + self.cgroup_sock_links.len() + self.cgroup_sock_addr_links.len() + 3;
+        let required = owned.len()
+            + self.cgroup_sock_links.len()
+            + self.cgroup_sock_addr_links.len()
+            + self.cgroup_takeovers.len()
+            + 3;
         result.verify_required_hooks(required);
         result.checked_at = std::time::SystemTime::now();
         result

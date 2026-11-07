@@ -577,16 +577,11 @@ fn select_datapath(
         }
         DatapathMode::Ebpf => {
             anyhow::ensure!(
-                !cfg!(target_os = "android"),
-                "the eBPF datapath would replace netd's root-cgroup programs on Android; use datapath: tproxy"
-            );
-            anyhow::ensure!(
                 cfg!(feature = "ebpf"),
                 "honk-core was built without the ebpf feature; use datapath: tproxy"
             );
             Ok(DatapathChoice::Ebpf)
         }
-        DatapathMode::Auto if cfg!(target_os = "android") => Ok(DatapathChoice::Tproxy),
         DatapathMode::Auto => {
             #[cfg(feature = "ebpf")]
             {
@@ -596,9 +591,14 @@ fn select_datapath(
                 }
                 Ok(DatapathChoice::Ebpf)
             }
-            // Builds without eBPF keep their unprivileged development default.
+            // Builds without eBPF keep their unprivileged development default;
+            // Android has no use for the mock backend.
             #[cfg(not(feature = "ebpf"))]
-            Ok(DatapathChoice::Mock)
+            if cfg!(target_os = "android") {
+                Ok(DatapathChoice::Tproxy)
+            } else {
+                Ok(DatapathChoice::Mock)
+            }
         }
     }
 }

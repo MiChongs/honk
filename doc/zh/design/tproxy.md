@@ -1,6 +1,6 @@
 # TPROXY 数据路径
 
-TPROXY 数据路径使用 netfilter 而非 eBPF 拦截流量，服务于 [eBPF 数据路径](./datapath.md) 无法加载的内核（早于 Linux 5.15）以及 Android（netd 占用根 cgroup 的 BPF 挂载点）。由 `global.datapath` 选择（[数据路径选择](../reference/global.md#数据路径选择)）；代码位于 `crates/honk-core/src/tproxy.rs`。
+TPROXY 数据路径使用 netfilter 而非 eBPF 拦截流量，服务于 [eBPF 数据路径](./datapath.md) 无法加载的内核（早于 Linux 5.15，包括运行这类内核的 Android 设备），其他环境也可主动选用。由 `global.datapath` 选择（[数据路径选择](../reference/global.md#数据路径选择)）；代码位于 `crates/honk-core/src/tproxy.rs`。
 
 ## 拦截
 
@@ -32,4 +32,4 @@ TPROXY 数据路径使用 netfilter 而非 eBPF 拦截流量，服务于 [eBPF �
 
 ## Android
 
-Android 构建（`just build-android`）始终把 `auto` 解析为 TPROXY，并拒绝 `datapath: ebpf`：以单程序模式挂载根 cgroup 程序会替换 netd 的程序。默认旁路 mark 为 `0x400000`（[套接字 mark](../reference/global.md#套接字-mark)）；规则优先级 5000 先于 netd 的规则。Android 没有 `/etc/resolv.conf`，节点主机名需设置 `global.bootstrap_resolver`。默认数据目录为 `/data/adb/honk`，实例锁为 `/dev/honk-core.lock`。
+Android 构建（`just build-android`）解析 `auto` 的方式与 Linux 相同：Linux 5.15+ 上选择 eBPF 数据路径（它会接管 netd 的占位 cgroup hook，见 [socket 身份](./datapath.md#程序清单)），否则选择 TPROXY。默认旁路 mark 为 `0x400000`（[套接字 mark](../reference/global.md#套接字-mark)）；规则优先级 5000 先于 netd 的规则。Android 没有 `/etc/resolv.conf`，节点主机名需设置 `global.bootstrap_resolver`。默认数据目录为 `/data/adb/honk`，实例锁为 `/dev/honk-core.lock`。

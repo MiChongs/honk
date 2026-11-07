@@ -59,9 +59,10 @@ build-musl-native:
     @echo "Binary: target/x86_64-unknown-linux-musl/release/honk-core"
 
 # Android build for root shells (Magisk, KernelSU).
-# Needs ANDROID_NDK_HOME (NDK r26+) and `rustup target add <target>`;
+# Needs ANDROID_NDK_HOME (NDK r26+) and `rustup target add <target>`, plus the
+# eBPF toolchain (nightly + bpf-linker) for the embedded object;
 # targets: aarch64-linux-android, x86_64-linux-android.
-build-android target="aarch64-linux-android" features="clash-api,mimalloc,rprx,native-api":
+build-android target="aarch64-linux-android" features="clash-api,mimalloc,rprx,native-api,ebpf":
     #!/usr/bin/env bash
     set -euo pipefail
     eval "$({{justfile_directory()}}/ci/android/env.sh {{target}})"

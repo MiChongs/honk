@@ -80,6 +80,12 @@ impl ProgramSet {
     }
 }
 
+#[cfg(target_os = "linux")]
+const SO_COOKIE: libc::c_int = libc::SO_COOKIE;
+/// asm-generic value (Linux 4.12+); bionic's `libc` bindings predate it.
+#[cfg(target_os = "android")]
+const SO_COOKIE: libc::c_int = 57;
+
 pub(super) fn detect(data: &[u8]) -> Option<ReceiveTraceOffsets> {
     let btf = OffsetBtf::parse(data)?;
     let common = btf.member_offset("sock", "__sk_common")?;
@@ -233,7 +239,7 @@ impl ReceiveTrace {
             libc::getsockopt(
                 fd,
                 libc::SOL_SOCKET,
-                libc::SO_COOKIE,
+                SO_COOKIE,
                 (&mut cookie as *mut u64).cast(),
                 &mut size,
             )

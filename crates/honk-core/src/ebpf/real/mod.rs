@@ -59,6 +59,9 @@ pub struct RealEbpfBackend {
     cgroup_sock_links: Vec<aya::programs::cgroup_sock::CgroupSockLink>,
     /// cgroup connect4/6 + sendmsg4/6 links; same lifetime rule as above.
     cgroup_sock_addr_links: Vec<aya::programs::cgroup_sock_addr::CgroupSockAddrLink>,
+    /// Identity programs swapped in for a single-program owner; dropping one
+    /// puts that owner back.
+    cgroup_takeovers: Vec<cgroup_takeover::Takeover>,
     pname_mode: process_name::PnameCaptureMode,
     dae0_ingress_link: Option<aya::programs::tc::SchedClassifierLink>,
     dae0peer_ingress_link: Option<aya::programs::tc::SchedClassifierLink>,
@@ -173,6 +176,7 @@ impl RealEbpfBackend {
 mod attach;
 pub(crate) mod bindings;
 mod btf;
+mod cgroup_takeover;
 mod events;
 mod iface_watch;
 mod interface_startup;
@@ -841,7 +845,10 @@ impl EbpfBackend for RealEbpfBackend {
     /// Without the cgroup hooks `pname()` never matches and `!pname()`
     /// always does; without argv capture they see the thread name.
     fn pname_support(&self) -> super::PnameSupport {
-        if self.cgroup_sock_links.is_empty() {
+        if self.cgroup_sock_links.is_empty()
+            && self.cgroup_sock_addr_links.is_empty()
+            && self.cgroup_takeovers.is_empty()
+        {
             super::PnameSupport::Unavailable
         } else if self.pname_mode == process_name::PnameCaptureMode::Comm {
             super::PnameSupport::ThreadName
@@ -968,6 +975,7 @@ impl EbpfBackend for RealEbpfBackend {
         self.tcp_proof_link = None;
         self.cgroup_sock_links.clear();
         self.cgroup_sock_addr_links.clear();
+        self.cgroup_takeovers.clear();
         self.dae0_ingress_link = None;
         self.dae0peer_ingress_link = None;
         self.sk_lookup_link = None;

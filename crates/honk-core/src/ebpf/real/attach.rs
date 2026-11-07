@@ -209,9 +209,12 @@ impl RealEbpfBackend {
             }
         }
         // Required socket-lifetime identity capture. Keep every link owned by
-        // the backend; missing support or a partial attachment is fatal.
+        // the backend; missing support or a partial attachment is fatal, except
+        // that a socket-creation hook held by a foreign single-program owner
+        // (Android netd) leaves capture to the connect and sendmsg hooks.
         let mut cgroup_sock_links = Vec::new();
         let mut cgroup_sock_addr_links = Vec::new();
+        let mut cgroup_takeovers = Vec::new();
         let cgroup_path = detect_cgroup_path()
             .map_err(|error| anyhow::anyhow!("required socket identity capture: {error}"))?;
         let cgroup_file = std::fs::File::open(&cgroup_path)
@@ -245,12 +248,27 @@ impl RealEbpfBackend {
         p.load().map_err(|error| {
             anyhow::anyhow!("required socket identity program {create_name} load: {error}")
         })?;
-        let link_id = p
-            .attach(&cgroup_file, aya::programs::CgroupAttachMode::Single)
-            .map_err(|error| {
-                anyhow::anyhow!("required socket identity program {create_name} attach: {error}")
-            })?;
-        cgroup_sock_links.push(p.take_link(link_id)?);
+        match p.attach(&cgroup_file, aya::programs::CgroupAttachMode::Single) {
+            Ok(link_id) => cgroup_sock_links.push(p.take_link(link_id)?),
+            Err(error) => match cgroup_takeover::refused_by_owner(&error)
+                .then(|| {
+                    cgroup_takeover::single_program_owner(
+                        &cgroup_file,
+                        aya_obj::generated::bpf_attach_type::BPF_CGROUP_INET_SOCK_CREATE,
+                    )
+                })
+                .flatten()
+            {
+                Some(owner) => warn!(
+                    %owner,
+                    "socket creation hook is held by another single-program owner; \
+                     process identity is captured at connect and sendmsg instead"
+                ),
+                None => {
+                    anyhow::bail!("required socket identity program {create_name} attach: {error}")
+                }
+            },
+        }
         for name in &cg_addr_names {
             let p: &mut aya::programs::CgroupSockAddr = bpf
                 .program_mut(name)
@@ -261,15 +279,35 @@ impl RealEbpfBackend {
             p.load().map_err(|error| {
                 anyhow::anyhow!("required socket identity program {name} load: {error}")
             })?;
-            let link_id = p
-                .attach(&cgroup_file, aya::programs::CgroupAttachMode::Single)
-                .map_err(|error| {
-                    anyhow::anyhow!("required socket identity program {name} attach: {error}")
-                })?;
-            cgroup_sock_addr_links.push(p.take_link(link_id)?);
+            match p.attach(&cgroup_file, aya::programs::CgroupAttachMode::Single) {
+                Ok(link_id) => cgroup_sock_addr_links.push(p.take_link(link_id)?),
+                Err(error) if cgroup_takeover::refused_by_owner(&error) => {
+                    let hook = cgroup_takeover::SockAddrHook::for_program(name)
+                        .ok_or_else(|| anyhow::anyhow!("no cgroup hook for {name}"))?;
+                    let fd = p.fd()?.as_fd().as_raw_fd();
+                    cgroup_takeovers.push(
+                        cgroup_takeover::Takeover::take(&cgroup_file, hook, fd, name).map_err(
+                            |reason| {
+                                anyhow::anyhow!(
+                                    "required socket identity program {name} attach: {error}; \
+                                     {reason:#}"
+                                )
+                            },
+                        )?,
+                    );
+                }
+                Err(error) => {
+                    anyhow::bail!("required socket identity program {name} attach: {error}")
+                }
+            }
         }
         let tcp_proof_link = tcp_binding::attach(&mut bpf, &cgroup_file)?;
-        info!("Attached 6 required cgroup programs to {}", cgroup_path);
+        info!(
+            links = cgroup_sock_links.len() + cgroup_sock_addr_links.len() + 1,
+            takeovers = cgroup_takeovers.len(),
+            "Attached required cgroup programs to {}",
+            cgroup_path
+        );
         // Initialize outbound connectivity map: all entries are alive by default.
         // This map is updated by health checks; until then we must not drop
         // proxy-bound traffic. Skipping entries here marks every outbound
@@ -344,6 +382,7 @@ impl RealEbpfBackend {
             bindings,
             cgroup_sock_links,
             cgroup_sock_addr_links,
+            cgroup_takeovers,
             pname_mode,
             dae0_ingress_link: None,
             dae0peer_ingress_link: None,

@@ -1,6 +1,6 @@
 # TPROXY datapath
 
-The TPROXY datapath intercepts traffic with netfilter instead of eBPF. It serves kernels the [eBPF datapath](./datapath.md) cannot load on (older than Linux 5.15) and Android, where netd owns the root-cgroup BPF hooks. `global.datapath` selects it ([Datapath selection](../reference/global.md#datapath-selection)); the code lives in `crates/honk-core/src/tproxy.rs`.
+The TPROXY datapath intercepts traffic with netfilter instead of eBPF. It serves kernels the [eBPF datapath](./datapath.md) cannot load on (older than Linux 5.15), including Android devices on such kernels, and is available by choice everywhere else. `global.datapath` selects it ([Datapath selection](../reference/global.md#datapath-selection)); the code lives in `crates/honk-core/src/tproxy.rs`.
 
 ## Interception
 
@@ -32,4 +32,4 @@ Rules are installed after the control plane is built and immediately before it r
 
 ## Android
 
-Android builds (`just build-android`) always resolve `auto` to TPROXY and refuse `datapath: ebpf`: attaching single-mode root-cgroup programs would replace netd's. The default bypass mark is `0x400000` ([Socket marks](../reference/global.md#socket-marks)); rule priority 5000 precedes netd's rules. Android has no `/etc/resolv.conf`, so `global.bootstrap_resolver` must be set for node hostnames. The default data directory is `/data/adb/honk` and the instance lock is `/dev/honk-core.lock`.
+Android builds (`just build-android`) resolve `auto` like Linux: the eBPF datapath on Linux 5.15+, where it takes over netd's placeholder cgroup hooks ([socket identity](./datapath.md#program-inventory)), and TPROXY otherwise. The default bypass mark is `0x400000` ([Socket marks](../reference/global.md#socket-marks)); rule priority 5000 precedes netd's rules. Android has no `/etc/resolv.conf`, so `global.bootstrap_resolver` must be set for node hostnames. The default data directory is `/data/adb/honk` and the instance lock is `/dev/honk-core.lock`.

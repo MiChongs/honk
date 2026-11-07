@@ -471,6 +471,12 @@ pub(crate) fn daens_netns_id() -> anyhow::Result<i32> {
     Ok(netlink::NlSock::new()?.ensure_netns_id(daens_fd()?.as_fd())?)
 }
 
+#[cfg(all(feature = "ebpf", target_os = "linux"))]
+const SO_NETNS_COOKIE: libc::c_int = libc::SO_NETNS_COOKIE;
+/// asm-generic value (Linux 5.14+); bionic's `libc` bindings predate it.
+#[cfg(all(feature = "ebpf", target_os = "android"))]
+const SO_NETNS_COOKIE: libc::c_int = 71;
+
 /// `SO_NETNS_COOKIE` of the owned daens: the id `bpf_get_netns_cookie` reports for sockets
 /// living there, which is how sock_ops tells honk's listeners from every other host socket.
 #[cfg(feature = "ebpf")]
@@ -488,7 +494,7 @@ pub(crate) fn daens_netns_cookie() -> anyhow::Result<u64> {
             libc::getsockopt(
                 socket.as_raw_fd(),
                 libc::SOL_SOCKET,
-                libc::SO_NETNS_COOKIE,
+                SO_NETNS_COOKIE,
                 (&raw mut cookie).cast(),
                 &mut length,
             )

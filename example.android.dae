@@ -1,0 +1,188 @@
+# honk 完整示例配置：已 root 的 Android（Magisk / KernelSU / APatch）
+#
+# 用法（root shell）：
+#   mkdir -p /data/adb/honk
+#   cp honk-core example.android.dae /data/adb/honk/
+#   cd /data/adb/honk && ./honk-core --config example.android.dae
+#
+# 数据路径（global.datapath）：
+# - 内核 5.15+（Android 13 起的 GKI 设备一般满足）默认使用 eBPF 数据路径，在内核里
+#   完成分流。Android 15+ 上，它会接管 netd 在 connect/sendmsg cgroup hook 上的直通
+#   占位程序，退出时原样归还（见 doc/zh/design/datapath.md#程序清单）。
+# - 更老的内核自动改用 netfilter TPROXY 数据路径，所有流量在用户态路由，
+#   此时 mac() 与 dscp() 条件永不匹配（见 doc/zh/design/tproxy.md）。
+#
+# 其他注意事项：
+# - 本机所有 App 的 TCP/UDP 都经 honk 分流；热点/USB 共享的客户端需配置 lan_interface。
+# - pname() 只匹配本机发起的流量，比较的是进程名（最多 15 字节，子串匹配）。
+#   App 的进程名可用 `cat /proc/$(pidof 包名)/comm` 查看。
+# - 请在系统设置中关闭「私人 DNS」（DoT），否则 DNS 走 853 端口，绕过 honk 的 DNS 分流。
+# - eBPF 数据路径下若 honk 崩溃，网卡上残留的过滤器会阻断网络，直到 honk 再次启动。
+#
+# 下列节点、订阅地址均为占位示例，请替换为你自己的。
+
+global {
+    # auto：内核支持时用 eBPF，否则用 TPROXY；也可显式写 ebpf 或 tproxy。
+    datapath: auto
+
+    # 拦截本机流量的上行网卡。Android 的默认路由不在 main 表里，eBPF 数据路径下
+    # 请写明网卡名（用 `ip -br link` 查看）：Wi-Fi 一般是 wlan0，移动数据一般是
+    # rmnet_data0 等；尚不存在的网卡会在出现时自动绑定。
+    wan_interface: wlan0, rmnet_data0
+    # 共享网络给其他设备时，填热点/USB 共享网卡（名称因机型而异，用 `ip link` 查看），
+    # 例如 wlan1、ap0、swlan0、rndis0、ncm0。留空只代理本机。
+    # lan_interface: wlan1
+
+    # 透明代理端口；修改后需重启。
+    tproxy_port: 12345
+
+    log_level: info
+    # 相对路径在 data_dir 下解析；留空则只输出到控制台。
+    log_file: 'honk.log'
+    # 状态库、订阅缓存、geo 资源的根目录（Android 默认就是此路径）。
+    data_dir: '/data/adb/honk'
+
+    # Android 没有 /etc/resolv.conf：节点使用域名时必须设置。
+    bootstrap_resolver: '223.5.5.5:53'
+
+    # 拨号模式：ip / domain / domain+ / domain++
+    dial_mode: domain
+
+    # honk 自身套接字的 mark，Android 默认 0x400000。netd 用 fwmark 低 16 位选网络，
+    # 如需修改，低 16 位必须为 0。
+    # so_mark_from_dae: 0x400000
+
+    # NFQUEUE 需要 nftables，Android GKI 内核没有，关闭以免启动时告警。
+    nfqueue_enable: false
+
+    # 健康检查：TCP 用 HTTPS 探测，UDP 用 DNS 探测（都经节点自身隧道）。
+    tcp_check_url: 'https://www.gstatic.com/generate_204'
+    tcp_check_http_method: HEAD
+    udp_check_dns: 'dns.google:53', '8.8.8.8', '2001:4860:4860::8888'
+    check_interval: 30s
+    check_tolerance: 50ms
+
+    # 保存订阅正文到 data_dir/state/honk.db，离线启动时可恢复。
+    store_subscribe: true
+
+    # 启动时最多预连接 8 个节点；手机省电可改为 0。
+    preconnect_node_count: 'auto'
+    # 物理代理连接/握手并发上限。
+    max_concurrent_dials: 64
+
+    # 退出时给已建立的连接最多 5 秒自然结束。
+    shutdown_wait_connections: false
+}
+
+# 订阅：节点只合并进内存，不回写本文件。
+subscription {
+    # mysub: 'https://example.com/subscription'
+    # 需要单独的 User-Agent 或刷新周期时，改用块形式，块内写 url、ua、interval
+    # 三项（例如 interval: '3600s'；interval: 0 关闭定期刷新），见
+    # doc/zh/reference/subscription.md。
+}
+
+# 节点：必须写成「标签: '分享链接'」。
+node {
+    hk-ss: 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ@hk.example.com:8388#hk-ss'
+    jp-trojan: 'trojan://secret@jp.example.com:443?sni=jp.example.com#jp-trojan'
+    sg-hy2: 'hysteria2://secret@sg.example.com:443?sni=sg.example.com#sg-hy2'
+    us-reality: 'vless://3f9a1c2e-4b5d-4e6f-8a7b-9c0d1e2f3a4b@us.example.com:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=XHmrRfZt4pDYQkK1lbRDeTmkxc9A0QjgLJ1RZJiDXjw&sid=6ba85179e30d4fc2&type=tcp#us-reality'
+}
+
+group {
+    # 固定使用一个节点，作为其他组的兜底。
+    manual {
+        filter: name('hk-ss')
+        policy: fixed(0)
+    }
+
+    # 不写 filter 即包含全部节点；score 按真实流量自适应选择可靠节点。
+    proxy {
+        policy: score
+        final: manual
+    }
+
+    # 按名称关键字分地区；也可按订阅过滤：filter: subtag(mysub) && name(keyword: 'HK')
+    asia {
+        filter: name(keyword: 'hk')
+        filter: name(keyword: 'jp')
+        filter: name(keyword: 'sg')
+        policy: score
+        final: manual
+    }
+
+    # 手动选择组：可通过 Clash API / 面板切换。
+    select {
+        filter: name('jp-trojan', 'sg-hy2', 'us-reality')
+        policy: fixed(0)
+    }
+}
+
+dns {
+    # 不设置 bind：只接管透明拦截到的 53 端口查询，不额外暴露监听器。
+    ipversion_prefer: 4
+    upstream {
+        # 用固定 IP 的 DoH，避免引导解析依赖；国内解析走直连。
+        alidns: 'https://223.5.5.5/dns-query?tls_server_name=dns.alidns.com' -> direct
+        # 境外解析经代理组拨号。
+        googledns: 'https://8.8.8.8/dns-query?tls_server_name=dns.google' -> proxy
+    }
+    routing {
+        request {
+            # 已知污染域名直接查境外，其余先查国内。
+            qname(geosite: gfw) -> googledns
+            fallback: alidns
+        }
+        response {
+            upstream(googledns) -> accept
+            qname(geosite: private) -> accept
+            ip(geoip: cn) -> accept
+            fallback: googledns
+        }
+    }
+}
+
+routing {
+    # ---------- 本机 App（按进程 comm）----------
+    # 微信直连（comm 为 com.tencent.mm）。
+    pname(tencent.mm) -> direct
+    # 其他代理工具自己的流量直连，防止回环。
+    pname(sing-box, mihomo, xray) -> direct(must)
+
+    # ---------- 私有与国内地址 ----------
+    # 宽泛的私网 must 也会绕过局域网私网 DNS；需要接管时改为 && !dport(53)。
+    dip(geoip: private) -> direct(must)
+    domain(geosite: private) -> direct
+
+    # ---------- 域名规则（先于 IP 规则匹配）----------
+    domain(geosite: category-ai-!cn) -> select
+    domain(geosite: netflix, geosite: youtube) -> asia
+    domain(geosite: google) -> proxy
+    domain(geosite: telegram) -> proxy
+    domain(geosite: cn) -> direct
+    domain(geosite: geolocation-cn) -> direct
+    domain(suffix: example.internal) -> direct
+
+    # ---------- IP 规则 ----------
+    dip(geoip: telegram) -> proxy
+    dip(geoip: cn) -> direct
+
+    # ---------- 其余流量 ----------
+    domain(geosite: geolocation-!cn) -> proxy
+    fallback: proxy
+}
+
+experimental {
+    # Clash 兼容 API，可用 yacd / metacubexd 等面板管理（只监听本机）。
+    clash_api {
+        external_controller: '127.0.0.1:9090'
+        secret: 'change-me'
+        default_mode: 'Rule'
+    }
+    # 缓存节点选择等运行状态，重启后恢复。
+    cache_file {
+        enabled: true
+        store_dns: false
+    }
+}

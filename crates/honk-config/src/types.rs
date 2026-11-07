@@ -97,7 +97,6 @@ impl std::str::FromStr for DialMode {
 #[serde(rename_all = "lowercase")]
 pub enum DatapathMode {
     /// The eBPF datapath when the running kernel supports it, else TPROXY.
-    /// Android always selects TPROXY: netd owns the root-cgroup BPF hooks.
     #[default]
     Auto,
     /// The eBPF datapath; startup fails on a kernel that cannot load it.
