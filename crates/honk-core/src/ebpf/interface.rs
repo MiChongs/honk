@@ -240,9 +240,9 @@ pub(crate) struct InterfacePlan {
 /// detaches it.
 #[derive(Debug)]
 pub enum Hook {
-    /// A TCX link (Linux 6.6+).
+    /// A TCX link (Linux 6.12+).
     Link(OwnedFd),
-    /// A clsact filter, for kernels without TCX; snapshots share it.
+    /// A clsact filter, for older kernels; snapshots share it.
     Filter(std::sync::Arc<crate::ebpf::real::bindings::TcFilter>),
 }
 

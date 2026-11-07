@@ -15,7 +15,7 @@ uname -r
 ```
 
 - 仅支持 Linux；真实透明代理必须以 `root` 运行。
-- eBPF 数据路径的编译式路由及其 map-in-map 同步发布保证要求 Linux `5.15+`。Linux 6.6 之前改用 `clsact` direct-action filter 而非 TCX link 绑定接口；5.19 之前没有 `SO_RCVMARK`，数据路径把每条 UDP DNS 路由 mark 以查询的五元组和 DNS 事务 ID 为键发布到 map 中供监听器读取；此时原生 API 的 UDP 流记录不带内核路由 witness，因为接收追踪只有在其 mark 与收到的 mark 一致时才被采信。默认的 `datapath: auto` 下，更早的内核（最低 4.14）改用 [netfilter TPROXY 数据路径](design/tproxy.md)；`datapath: ebpf` 会在附着前拒绝它们。
+- eBPF 数据路径的编译式路由及其 map-in-map 同步发布保证要求 Linux `5.15+`。Linux 6.12 之前改用 `clsact` direct-action filter 而非 TCX link 绑定接口；5.19 之前没有 `SO_RCVMARK`，数据路径把每条 UDP DNS 路由 mark 以查询的五元组和 DNS 事务 ID 为键发布到 map 中供监听器读取；此时原生 API 的 UDP 流记录不带内核路由 witness，因为接收追踪只有在其 mark 与收到的 mark 一致时才被采信。默认的 `datapath: auto` 下，更早的内核（最低 4.14）改用 [netfilter TPROXY 数据路径](design/tproxy.md)；`datapath: ebpf` 会在附着前拒绝它们。
 - `netkit` 不是必需项；内核不支持时 honk 自动回退到 veth。
 
 `lan_interface` 用于代理从局域网进入网关的流量，`wan_interface` 用于代理网关本机发起的流量：
@@ -46,7 +46,7 @@ CONFIG_NET_XGRESS=y
 CONFIG_NET_NS=y
 ```
 
-TCX 后端需要由 `CONFIG_NET_CLS_ACT` 选中的隐藏选项 `CONFIG_NET_XGRESS`，不要求旧式 `CONFIG_NET_CLS_BPF` 或 `CONFIG_NET_SCH_INGRESS`。6.6 之前的内核没有 TCX，改为需要 `CONFIG_NET_CLS_ACT`、`CONFIG_NET_SCH_INGRESS`（`clsact` qdisc）与 `CONFIG_NET_CLS_BPF`。参见[挂钩与 qdisc 所有权](./design/datapath.md#接口挂钩集合)。
+TCX 后端需要由 `CONFIG_NET_CLS_ACT` 选中的隐藏选项 `CONFIG_NET_XGRESS`，不要求旧式 `CONFIG_NET_CLS_BPF` 或 `CONFIG_NET_SCH_INGRESS`。6.12 之前的内核（honk 在这些内核上不使用 TCX）改为需要 `CONFIG_NET_CLS_ACT`、`CONFIG_NET_SCH_INGRESS`（`clsact` qdisc）与 `CONFIG_NET_CLS_BPF`。参见[挂钩与 qdisc 所有权](./design/datapath.md#接口挂钩集合)。
 
 默认启用的首包保留 UDP 还需要：
 
@@ -559,7 +559,7 @@ cargo run --release -p honk-core -- \
 | mock 启动成功但流量不经过 honk | 这是预期行为；使用含 `ebpf` 特性的构建并以 root 启动。 |
 | NFQUEUE disabled 或 queue busy | 检查 nftables/NFQUEUE 内核支持、队列 320 占用者和残留 honk 实例；确实不需要时设置 `nfqueue_enable: false`。 |
 | LAN 流量未被代理 | `lan_interface` 为空或接口名错误；它不会自动使用 `lo`。接口名无误时见下一行。 |
-| `GET /runtime` 出现 `interface_binding` 降级 | 某个已配置的接口尚未绑定；日志中有接口名。`pending`：接口不存在，或 `auto` 条目没有 IPv4 默认路由。`unsupported_type`：链路类型被拒绝（例如 `lo`、VRF 设备或 `dae0`）；请改配受支持的接口或其成员。`attach_failed`：TCX link（Linux 6.6 之前为 `clsact` filter）无法创建、更新或校验；日志中的警告会给出原因。接口状态字段见[原生 API 参考](./reference/api.md#原生-api)。 |
+| `GET /runtime` 出现 `interface_binding` 降级 | 某个已配置的接口尚未绑定；日志中有接口名。`pending`：接口不存在，或 `auto` 条目没有 IPv4 默认路由。`unsupported_type`：链路类型被拒绝（例如 `lo`、VRF 设备或 `dae0`）；请改配受支持的接口或其成员。`attach_failed`：TCX link（Linux 6.12 之前为 `clsact` filter）无法创建、更新或校验；日志中的警告会给出原因。接口状态字段见[原生 API 参考](./reference/api.md#原生-api)。 |
 | 旁路由的客户端绕过 honk，或转发的流量被丢弃 | 把 `all` 与 LAN 接口的 `send_redirects` 设为 `0`，并把 `net.ipv4.conf.all.rp_filter` 设为 `0`，见[旁路由](#旁路由)。 |
 | VLESS/VMess 报 `No handler for protocol` | 构建缺少 `rprx`；使用默认特性，或显式加入 `rprx`。 |
 | Geo 规则加载失败 | 将 `geoip.dat`/`geosite.dat` 放入配置的 `data_dir`，或检查文档所列的旧目录/共享目录搜索位置；不需要时删除未使用的 Geo 规则。 |

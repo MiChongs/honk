@@ -948,7 +948,7 @@ pub fn lan_egress_l3(ctx: *mut __sk_buff) -> i32 {
     ))
 }
 
-/// Which packets one WAN egress classifier handles. Kernels before 6.6 bind
+/// Which packets one WAN egress classifier handles. Kernels before 6.12 bind
 /// the TCP and the other lane as two chained clsact filters, each its own
 /// program within the verifier's instruction limit; a packet the TCP lane
 /// leaves continues to the other lane through `TC_ACT_UNSPEC`.

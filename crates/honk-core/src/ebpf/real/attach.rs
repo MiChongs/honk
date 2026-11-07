@@ -398,9 +398,9 @@ impl RealEbpfBackend {
         }
         let name = std::ffi::CString::new(iface)
             .map_err(|e| anyhow::anyhow!("interface name '{}': {}", iface, e))?;
-        if !super::bindings::tcx_supported() {
-            // Without TCX the attachment is a clsact filter, which needs the
-            // qdisc; these internal devices are honk's own.
+        if !super::kernel_version().is_some_and(|version| version >= (6, 6, 0)) {
+            // Aya attaches through a clsact filter before Linux 6.6, which
+            // needs the qdisc; these internal devices are honk's own.
             let ifindex = unsafe { libc::if_nametoindex(name.as_ptr()) };
             if ifindex == 0 {
                 return Err(anyhow::anyhow!(

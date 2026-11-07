@@ -1,7 +1,7 @@
 //! Single owner of the TCX links on configured interfaces.
 //!
-//! Kernels before Linux 6.6 have no TCX; there each binding is a clsact
-//! direct-action filter at honk's own priority instead, with a fresh handle
+//! Kernels before Linux 6.12 bind through clsact instead: each binding is a
+//! direct-action filter at honk's own priority, with a fresh handle
 //! standing in for the link ID. Return codes mean the same in both: TCX_NEXT
 //! is TC_ACT_UNSPEC (continue to the next filter) and TCX_PASS is TC_ACT_OK.
 //!
@@ -50,8 +50,11 @@ pub(crate) const FILTER_PRIORITY: u16 = 0xfffc;
 /// Every lane priority honk owns.
 const FILTER_PRIORITIES: std::ops::Range<u16> = FILTER_PRIORITY..FILTER_PRIORITY + 3;
 
-/// TCX arrived in Linux 6.6. Tests can force the clsact path on any kernel
-/// with `HONK_TEST_CLSACT=1`.
+/// TCX arrived in Linux 6.6, but the unsplit WAN egress programs a TCX link
+/// runs exceed the 6.6 verifier's instruction budget (Android 6.6.50); 6.12 is
+/// the oldest kernel they are verified on, so older ones take the per-lane
+/// clsact filters. Tests can force the clsact path on any kernel with
+/// `HONK_TEST_CLSACT=1`.
 pub(crate) fn tcx_supported() -> bool {
     static TCX: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *TCX.get_or_init(|| {
@@ -59,7 +62,7 @@ pub(crate) fn tcx_supported() -> bool {
         if std::env::var_os("HONK_TEST_CLSACT").is_some() {
             return false;
         }
-        super::kernel_version().is_some_and(|version| version >= (6, 6, 0))
+        super::kernel_version().is_some_and(|version| version >= (6, 12, 0))
     })
 }
 

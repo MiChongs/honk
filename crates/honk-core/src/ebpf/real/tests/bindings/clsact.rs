@@ -1,4 +1,4 @@
-//! The binding owner on kernels without TCX (before Linux 6.6): every hook is
+//! The binding owner on kernels before Linux 6.12, which bind without TCX: every hook is
 //! a clsact filter at honk's priority. Each case checks the kernel's filter
 //! dump, not the owner's records.
 

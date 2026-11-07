@@ -57,11 +57,11 @@ fn chain(ifindex: u32, direction: Direction) -> Vec<u32> {
         .links
 }
 
-/// These cases prove TCX link semantics; kernels before 6.6 bind through
+/// These cases prove TCX link semantics; kernels before 6.12 bind through
 /// clsact filters instead, covered by `bindings::clsact`.
 fn tcx_netns(test: impl FnOnce() + Send + 'static) {
     if !owner::tcx_supported() {
-        eprintln!("skipped: no TCX before Linux 6.6");
+        eprintln!("skipped: no TCX bindings before Linux 6.12");
         return;
     }
     private_netns(test);

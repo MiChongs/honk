@@ -183,10 +183,10 @@ fn observe_dae0(
     programs: &[DatapathProgram],
 ) -> anyhow::Result<DatapathAttachment> {
     let ifindex = nix::net::if_::if_nametoindex("dae0")?;
-    if !bindings::tcx_supported() {
+    let fd: Result<&FdLink, _> = link.try_into();
+    let Ok(fd) = fd else {
         return observe_dae0_filter(link, ifindex, programs);
-    }
-    let fd: &FdLink = link.try_into()?;
+    };
     let info = fd.info()?;
     let program = programs
         .iter()
@@ -207,7 +207,7 @@ fn observe_dae0(
     })
 }
 
-/// Before Linux 6.6 Aya attaches dae0_ingress as a clsact filter; its
+/// Aya attaches dae0_ingress as a clsact filter before Linux 6.6; its
 /// priority and handle identify it in the ingress dump.
 fn observe_dae0_filter(
     link: &aya::programs::tc::SchedClassifierLink,

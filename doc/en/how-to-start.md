@@ -15,7 +15,7 @@ uname -r
 ```
 
 - Only Linux is supported. The real transparent datapath must run as `root`.
-- The eBPF datapath requires Linux `5.15+` for compiled routing and its synchronous map-in-map publication guarantee. Before Linux 6.6 it binds interfaces with `clsact` direct-action filters instead of TCX links; before 5.19, which has no `SO_RCVMARK`, the datapath publishes each UDP DNS route mark in a map, keyed by the query's tuple and DNS transaction ID, for the listener to read; native API UDP flow records there carry no kernel route witness, because the receive trace is only trusted once its mark matches the received one. With the default `datapath: auto`, older kernels (down to 4.14) use the [netfilter TPROXY datapath](design/tproxy.md) instead; `datapath: ebpf` rejects them before attachment.
+- The eBPF datapath requires Linux `5.15+` for compiled routing and its synchronous map-in-map publication guarantee. Before Linux 6.12 it binds interfaces with `clsact` direct-action filters instead of TCX links; before 5.19, which has no `SO_RCVMARK`, the datapath publishes each UDP DNS route mark in a map, keyed by the query's tuple and DNS transaction ID, for the listener to read; native API UDP flow records there carry no kernel route witness, because the receive trace is only trusted once its mark matches the received one. With the default `datapath: auto`, older kernels (down to 4.14) use the [netfilter TPROXY datapath](design/tproxy.md) instead; `datapath: ebpf` rejects them before attachment.
 - `netkit` is optional. honk falls back to veth when the kernel does not support it.
 
 `lan_interface` intercepts traffic entering the gateway from the LAN. `wan_interface` intercepts traffic originated by the gateway itself:
@@ -46,7 +46,7 @@ CONFIG_NET_XGRESS=y
 CONFIG_NET_NS=y
 ```
 
-The TCX backend needs `CONFIG_NET_XGRESS`, a hidden option selected by `CONFIG_NET_CLS_ACT`, not legacy `CONFIG_NET_CLS_BPF` or `CONFIG_NET_SCH_INGRESS`. Kernels before 6.6 have no TCX and need `CONFIG_NET_CLS_ACT`, `CONFIG_NET_SCH_INGRESS` (the `clsact` qdisc) and `CONFIG_NET_CLS_BPF` instead. See [hook and qdisc ownership](./design/datapath.md#interface-hook-sets).
+The TCX backend needs `CONFIG_NET_XGRESS`, a hidden option selected by `CONFIG_NET_CLS_ACT`, not legacy `CONFIG_NET_CLS_BPF` or `CONFIG_NET_SCH_INGRESS`. Kernels before 6.12, where honk does not use TCX, need `CONFIG_NET_CLS_ACT`, `CONFIG_NET_SCH_INGRESS` (the `clsact` qdisc) and `CONFIG_NET_CLS_BPF` instead. See [hook and qdisc ownership](./design/datapath.md#interface-hook-sets).
 
 Held-first-packet UDP, which is enabled by default, additionally requires:
 
@@ -559,7 +559,7 @@ cargo run --release -p honk-core -- \
 | Mock mode starts but traffic bypasses honk | This is expected. Build with the `ebpf` feature and run as root. |
 | NFQUEUE is disabled or queue 320 is busy | Check nftables/NFQUEUE kernel support, the queue owner, and stale honk instances. Set `nfqueue_enable: false` only when staging is intentionally unnecessary. |
 | LAN traffic is not intercepted | `lan_interface` is empty or names the wrong interface. honk does not substitute `lo`. If the interface is named correctly, see the next row. |
-| `GET /runtime` shows an `interface_binding` degradation | A configured interface is not bound yet; the logs name it. `pending`: it does not exist or an `auto` entry has no IPv4 default route. `unsupported_type`: the link type is refused (for example `lo`, a VRF device or `dae0`); name a supported interface or a member. `attach_failed`: the TCX link (a `clsact` filter before Linux 6.6) could not be created, updated or verified; see the warning in the logs. See the [native API reference](./reference/api.md#native-api) for interface-state fields. |
+| `GET /runtime` shows an `interface_binding` degradation | A configured interface is not bound yet; the logs name it. `pending`: it does not exist or an `auto` entry has no IPv4 default route. `unsupported_type`: the link type is refused (for example `lo`, a VRF device or `dae0`); name a supported interface or a member. `attach_failed`: the TCX link (a `clsact` filter before Linux 6.12) could not be created, updated or verified; see the warning in the logs. See the [native API reference](./reference/api.md#native-api) for interface-state fields. |
 | On a single-arm gateway, clients bypass honk or forwarded traffic is dropped | Set `send_redirects` to `0` for `all` and the LAN interface, and `net.ipv4.conf.all.rp_filter` to `0`. See [Single-arm gateways](#single-arm-gateways). |
 | VLESS/VMess reports `No handler for protocol` | The build lacks `rprx`; use the default features or add `rprx` explicitly. |
 | A Geo rule fails to load | Put `geoip.dat`/`geosite.dat` in the configured `data_dir`, or verify the documented legacy/share search locations; remove unused Geo rules if not needed. |

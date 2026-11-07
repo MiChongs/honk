@@ -1,5 +1,5 @@
 //! clsact qdiscs and direct-action BPF filters: interface hooks on kernels
-//! before Linux 6.6, which have no TCX links.
+//! before Linux 6.12, where honk does not use TCX links.
 
 use super::*;
 use std::os::fd::RawFd;
