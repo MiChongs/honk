@@ -57,6 +57,7 @@ CLI 与 Clash API 共用构建时版本号：发布构建使用 GitHub 标签名
 | 命令 | 当前行为 | 持久化 / 运行时影响 |
 | --- | --- | --- |
 | `reload` | 从已加锁的 `/run/honk-core.lock` 读取 PID 并发送 `SIGHUP`。 | 只报告信号成功送达；运行中进程随后记录 `applied` 或 `rejected`。mock 实例不持有该锁。 |
+| `cleanup` | 有实例持有 `/run/honk-core.lock`（Android 上为 `/dev/honk-core.lock`）时拒绝执行。否则删除所有网卡上 honk 的 clsact 优先级范围（`0xfffc`–`0xfffe`）内的 BPF filter，把仍由 honk 程序占据的 connect/sendmsg cgroup hook 交还给 netd pin 的程序或等价的直通程序，并移除 TPROXY 链与策略路由。 | 崩溃实例恰好会留下这些（TCX 与 cgroup link 随进程消失），它们会阻断流量直到 honk-core 再次启动。持久化的 map pin（包括 `UDP_DECISION_SEQUENCE`）保留。 |
 | `mode <rule\|global\|direct>` | 加载 `--config`，将参数字符串赋给 `experimental.clash_api.default_mode`，并在重写结构化格式文件前完成校验。`.dae` 文件会被拒绝且保持不变，因为 writer 无法保留 dae 语法、注释或 include；请直接编辑这些源文件，或使用 `.toml`、`.yaml`、`.json`。 | 仅修改文件；不联系运行中的引擎，也不更改 dial mode。接受的字符串不同于正常 dial mode 值 `ip`、`domain`、`domain+`、`domain++`。 |
 | `proxy <group> <node>` | 检查组名和节点名各自存在，然后打印请求的选择；不检查节点是否属于该组。 | 不写入任何内容，也不联系运行中的引擎。 |
 | `config export --out PATH [--without-secrets]` | 把配置数据库的当前修订版本写成一份 `.dae` 文件；未给 `--without-secrets` 时补回监听凭据。无论守护进程是否运行，都通过以读写方式打开的 query-only 连接读取数据库。关闭该连接不会执行检查点，也不会删除 `honk.db-wal`；除 SQLite 可能创建的 `-shm` 索引外，唯一可能的写入是回滚崩溃遗留的日志。文件写完后才发布。 | 以 0600 权限新建 `PATH`，拒绝已存在的文件。 |

@@ -105,6 +105,29 @@ pub struct RealEbpfBackend {
 }
 
 /// Find cgroup2 in the calling thread's mount namespace, not its thread-group leader's.
+/// Datapath hooks a crashed instance left behind and the counts removed.
+pub(crate) struct Leftovers {
+    pub filters: usize,
+    pub cgroup_hooks: usize,
+}
+
+/// Remove the interface filters and cgroup takeovers that outlive a crashed
+/// instance; TCX links and cgroup links go with their process. The caller
+/// holds the instance lock.
+pub(crate) fn remove_leftovers() -> anyhow::Result<Leftovers> {
+    let filters = bindings::remove_leftover_filters()?;
+    let cgroup_hooks = match detect_cgroup_path() {
+        Ok(path) => cgroup_takeover::reclaim_leftovers(
+            &std::fs::File::open(&path).map_err(|e| anyhow::anyhow!("open cgroup {path}: {e}"))?,
+        )?,
+        Err(_) => 0,
+    };
+    Ok(Leftovers {
+        filters,
+        cgroup_hooks,
+    })
+}
+
 fn detect_cgroup_path() -> anyhow::Result<String> {
     let mounts = std::fs::read_to_string("/proc/thread-self/mounts")?;
     for line in mounts.lines() {

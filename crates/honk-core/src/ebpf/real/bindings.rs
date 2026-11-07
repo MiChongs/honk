@@ -73,6 +73,33 @@ fn filter_parent(direction: Direction) -> u32 {
     }
 }
 
+/// Delete the BPF filters in honk's priority range from every interface of
+/// the calling thread's namespace. Unlike TCX links they outlive a crashed
+/// process and keep redirecting into its vanished `dae0`. Returns how many.
+pub(crate) fn remove_leftover_filters() -> anyhow::Result<usize> {
+    let mut socket = NlSock::new().context("netlink socket")?;
+    let mut removed = 0;
+    for link in socket.dump_links().context("list interfaces")? {
+        for parent in [
+            crate::netlink::tc::TC_PARENT_INGRESS,
+            crate::netlink::tc::TC_PARENT_EGRESS,
+        ] {
+            let filters = socket
+                .dump_filters(link.ifindex.get(), parent)
+                .with_context(|| format!("list filters of {}", link.name))?;
+            for filter in filters {
+                if FILTER_PRIORITIES.contains(&filter.priority) && filter.program_id.is_some() {
+                    socket
+                        .del_filter(link.ifindex.get(), parent, filter.priority, filter.handle)
+                        .with_context(|| format!("remove a leftover filter of {}", link.name))?;
+                    removed += 1;
+                }
+            }
+        }
+    }
+    Ok(removed)
+}
+
 /// Handles are never reused within a process, so a released filter can only
 /// ever delete itself, never a replacement at the same priority.
 fn next_filter_handle() -> u32 {

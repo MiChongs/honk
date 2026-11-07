@@ -183,6 +183,34 @@ impl Drop for Takeover {
     }
 }
 
+/// Hand every hook a crashed instance left its identity program on to netd's
+/// pinned program, or to an equivalent pass-through. Returns how many hooks
+/// changed hands.
+pub(super) fn reclaim_leftovers(cgroup: &std::fs::File) -> anyhow::Result<usize> {
+    let mut reclaimed = 0;
+    for name in ["connect4", "connect6", "sendmsg4", "sendmsg6"] {
+        let hook = SockAddrHook::for_program(name).expect("known hook");
+        let owners = query(cgroup.as_raw_fd(), hook.attach_type)?;
+        let [owner] = owners.ids[..] else { continue };
+        if owners.flags & BPF_F_ALLOW_MULTI != 0
+            || !prog_info(prog_fd_by_id(owner)?.as_raw_fd())?
+                .name()
+                .starts_with(HONK_PROGRAM_PREFIX)
+        {
+            continue;
+        }
+        let replacement = netd_pinned(hook).map_or_else(|| placeholder(hook), Ok)?;
+        attach(
+            cgroup.as_raw_fd(),
+            replacement.as_raw_fd(),
+            hook.attach_type,
+            owners.flags,
+        )?;
+        reclaimed += 1;
+    }
+    Ok(reclaimed)
+}
+
 /// Whether `error` from a link attachment means the hook is held by a
 /// single-program owner.
 pub(super) fn refused_by_owner(error: &aya::programs::ProgramError) -> bool {

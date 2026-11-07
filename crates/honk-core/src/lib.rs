@@ -190,6 +190,10 @@ pub enum ClashCommand {
     },
     /// Ask the running instance to reload its configured file
     Reload,
+    /// Remove the datapath hooks and rules a crashed instance left behind,
+    /// which keep blocking traffic until honk-core starts again; refused while
+    /// honk-core runs
+    Cleanup,
     /// Read the configuration db
     Config {
         #[command(subcommand)]
@@ -280,6 +284,7 @@ pub enum ConfigStore {
 }
 
 pub async fn handle_clash_command(cli: &Cli) -> anyhow::Result<()> {
+    use anyhow::Context as _;
     use std::time::Duration;
 
     let cmd = cli.command.as_ref().expect("subcommand required");
@@ -328,6 +333,27 @@ pub async fn handle_clash_command(cli: &Cli) -> anyhow::Result<()> {
         ClashCommand::Reload => {
             let pid = request_reload(std::path::Path::new(INSTANCE_LOCK_PATH))?;
             println!("Reload requested for honk-core process {pid}");
+        }
+        ClashCommand::Cleanup => {
+            let path = std::path::Path::new(INSTANCE_LOCK_PATH);
+            if let Ok(pid) = running_instance_pid(path) {
+                anyhow::bail!("honk-core is running (PID {pid}); stop it before cleanup");
+            }
+            let _lock = acquire_instance_lock(path, Duration::ZERO)
+                .context("take the datapath lock for cleanup")?;
+            #[cfg(all(feature = "ebpf", any(target_os = "linux", target_os = "android")))]
+            {
+                let leftovers = ebpf::real::remove_leftovers()?;
+                println!(
+                    "Removed {} interface filter(s); handed {} cgroup hook(s) back",
+                    leftovers.filters, leftovers.cgroup_hooks
+                );
+            }
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                tproxy::remove_leftovers(honk_ebpf_common::TPROXY_MARK)?;
+                println!("Removed leftover TPROXY rules and policy routes");
+            }
         }
         ClashCommand::Mode { mode } => {
             anyhow::ensure!(

@@ -415,6 +415,24 @@ fn remove_route(family: Family, mark: u32) {
     );
 }
 
+/// Remove the rules and policy routes a crashed instance left behind, for
+/// every family whose `iptables` is present.
+pub(crate) fn remove_leftovers(mark: u32) -> anyhow::Result<()> {
+    for family in [Family::V4, Family::V6] {
+        remove_route(family, mark);
+        if run(
+            family.iptables(),
+            &["-w", "-t", "mangle", "-S", "OUTPUT"],
+            None,
+        )
+        .is_ok()
+        {
+            remove_rules(family).with_context(|| format!("remove {family:?} TPROXY rules"))?;
+        }
+    }
+    Ok(())
+}
+
 /// Installed interception; [`TproxyDatapath::remove`] or drop restores the host.
 pub(crate) struct TproxyDatapath {
     settings: Settings,
